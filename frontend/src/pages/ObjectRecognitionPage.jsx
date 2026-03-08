@@ -25,7 +25,18 @@ export default function ObjectRecognitionPage() {
     const [streamMode, setStreamMode] = useState(false)
     const imgRef = useRef(null)
 
-    const baseUrl = espIp ? `http://${espIp.replace(/^https?:\/\//, '').replace(/\/$/, '')}` : ''
+    const cleanIp = espIp ? espIp.replace(/^https?:\/\//, '').replace(/\/$/, '') : ''
+
+    // Helper to fetch through the Vite proxy (avoids CORS)
+    const espFetch = (path, options = {}) => {
+        return fetch(`/esp32${path}`, {
+            ...options,
+            headers: {
+                ...options.headers,
+                'x-esp32-ip': cleanIp,
+            }
+        })
+    }
 
     // Save IP to localStorage
     useEffect(() => {
@@ -41,7 +52,7 @@ export default function ObjectRecognitionPage() {
         setError('')
         try {
             // Try to fetch a capture to verify connection
-            const res = await fetch(`${baseUrl}/capture?t=${Date.now()}`, {
+            const res = await espFetch(`/capture?t=${Date.now()}`, {
                 signal: AbortSignal.timeout(5000)
             })
             if (!res.ok) throw new Error('Failed to connect')
@@ -68,12 +79,12 @@ export default function ObjectRecognitionPage() {
         setError('')
         setStreamMode(false)
         try {
-            const res = await fetch(`${baseUrl}/capture?t=${Date.now()}`)
+            const res = await espFetch(`/capture?t=${Date.now()}`)
             const blob = await res.blob()
             if (imgRef.current) imgRef.current.src = URL.createObjectURL(blob)
             // Turn off flash after capture
             if (flashOn) {
-                await fetch(`${baseUrl}/flashoff`)
+                await espFetch('/flashoff')
                 setFlashOn(false)
             }
         } catch {
@@ -86,7 +97,7 @@ export default function ObjectRecognitionPage() {
         setError('')
         setResult(null)
         try {
-            const res = await fetch(`${baseUrl}/detect`)
+            const res = await espFetch('/detect')
             const data = await res.json()
             if (data.error) {
                 setError(data.error)
@@ -104,7 +115,7 @@ export default function ObjectRecognitionPage() {
 
     const toggleFlash = async () => {
         try {
-            await fetch(`${baseUrl}/${flashOn ? 'flashoff' : 'flashon'}`)
+            await espFetch(`/${flashOn ? 'flashoff' : 'flashon'}`)
             setFlashOn(!flashOn)
         } catch {
             setError('Failed to toggle flash')
@@ -117,7 +128,8 @@ export default function ObjectRecognitionPage() {
             capturePhoto()
         } else {
             setStreamMode(true)
-            if (imgRef.current) imgRef.current.src = `${baseUrl}/stream`
+            // Stream uses img src directly — <img> tags are NOT subject to CORS
+            if (imgRef.current) imgRef.current.src = `http://${cleanIp}/stream`
         }
     }
 
